@@ -1,9 +1,643 @@
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-    <title>Snake&ladder</title>
-    <link rel="stylesheet" type="text/css" href="styles.css">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pixel Wizard Snake & Ladder — Retro Wizardboard</title>
+<style>
+  :root{
+    --tile: 48px;
+    --board-size: calc(var(--tile) * 10);
+    --bg1: #edd9b3; /* parchment */
+    --accent: #6fe7b0;
+    --pixel-scale: 1; /* change to 1.5/2 for big pixels */
+  }
+  html,body{height:100%;margin:0;font-family: "Press Start 2P", monospace, sans-serif; background:
+    radial-gradient(ellipse at top left,#201020 0%, #081018 50%),
+    linear-gradient(180deg, rgba(0,0,0,0.25), rgba(0,0,0,0.6)); color:#fff; display:flex;align-items:center;justify-content:center;}
+  /* Container */
+  .game {
+    display:grid;
+    grid-template-columns: var(--board-size) 360px;
+    gap:24px;
+    align-items:start;
+    padding:28px;
+  }
+
+  /* Board container */
+  .board-wrap {
+    width: var(--board-size);
+    height: var(--board-size);
+    position:relative;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.7), inset 0 0 30px rgba(255,255,255,0.03);
+    background: repeating-linear-gradient(45deg, rgba(0,0,0,0.04) 0 4px, rgba(255,255,255,0.01) 4px 8px);
+    overflow:visible;
+  }
+
+  /* Parchment background */
+  .parchment {
+    position:absolute; inset:0; z-index:0; border-radius:8px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23edd9b3"/><filter id="g"><feTurbulence baseFrequency="0.8" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0.1"/></filter><rect width="200" height="200" opacity="0.06" filter="url(%23g)"/></svg>');
+    background-size: 240px 240px;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.18);
+  }
+
+  /* Grid of tiles */
+  .grid {
+    position:relative;
+    z-index:2;
+    width:100%;
+    height:100%;
+    display:grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: repeat(10, 1fr);
+  }
+  .cell {
+    width:100%; height:100%;
+    border:1px solid rgba(0,0,0,0.18);
+    box-sizing:border-box;
+    display:flex; align-items:flex-end; justify-content:flex-end;
+    padding:4px;
+    font-size:10px; color:#4b3615; text-shadow:0 1px rgba(255,255,255,0.2);
+  }
+
+  /* alternate retro tile shading */
+  .cell:nth-child(odd){ background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)); }
+  .cell:nth-child(even){ background: linear-gradient(180deg, rgba(0,0,0,0.01), rgba(255,255,255,0.01)); }
+
+  /* SVG overlay for snakes & ladders */
+  .overlay {
+    position:absolute; inset:0; z-index:3; pointer-events:none;
+  }
+  svg{ width:100%; height:100%; overflow:visible; display:block; image-rendering:pixelated; }
+
+  /* pixel players */
+  .player {
+    position:absolute;
+    width: calc(var(--tile) * 0.8);
+    height: calc(var(--tile) * 0.8);
+    transform-origin:center center;
+    z-index:6;
+    image-rendering: pixelated;
+  }
+  .player svg { width:100%; height:100%; display:block; }
+
+  /* bob animation */
+  .bob { animation: bob 900ms ease-in-out infinite; }
+  @keyframes bob { 0% { transform: translateY(0); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0); } }
+
+  /* control panel */
+  .panel {
+    width:340px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.3));
+    border-radius:12px;
+    padding:16px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+    border:1px solid rgba(255,255,255,0.03);
+    position:relative;
+  }
+  h2 { margin:6px 0 12px 0; font-size:14px; text-transform:uppercase; letter-spacing:1px; color:#ffdba7; }
+  .dice {
+    width:120px; height:120px;
+    margin: 6px auto;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:12px;
+    background: linear-gradient(180deg,#111 0%, #222 100%);
+    box-shadow: inset 0 -8px 18px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.6);
+    cursor:pointer; user-select:none;
+  }
+  .dice.pixel {
+    image-rendering: pixelated;
+    transform-origin:center;
+  }
+  .dice .face{
+    font-size:40px; color:#ffdba7; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    font-weight:700;
+  }
+  .roll-btn { display:block; width:100%; padding:10px; margin-top:10px; border-radius:8px; border:none; background:linear-gradient(90deg,#3b8cff,#a355ff); color:#fff; font-weight:700; cursor:pointer; box-shadow: 0 6px 18px rgba(59,140,255,0.12); }
+  .small { font-size:12px; color:#dfe8ff; margin-top:8px; }
+
+  /* snake path effect classes */
+  .snake-path { stroke:#164214; stroke-width:6; fill:none; stroke-linecap:round; filter: url(#goo); }
+  .snake-body { stroke:#0b2a0f; stroke-width:8; stroke-linecap:round; }
+  .ladder-path { stroke:#f6d28d; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; opacity:0.95; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+  .ladder-rung { stroke:#ffd77a; stroke-width:3; stroke-linecap:round; }
+
+  /* shimmer for ladder */
+  .glow {
+    filter: drop-shadow(0 0 8px rgba(255,220,120,0.8));
+    animation: shimmer 1.2s linear infinite;
+  }
+  @keyframes shimmer {
+    0% { opacity:0.8; transform:scale(1); }
+    50% { opacity:1; transform:scale(1.02); }
+    100% { opacity:0.8; transform:scale(1); }
+  }
+
+  /* spark canvas */
+  canvas.spark {
+    position:absolute; inset:0; z-index:5; pointer-events:none;
+  }
+
+  /* win overlay */
+  .win {
+    position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.6));
+    font-size:28px; color:#ffefb8; text-shadow:0 6px 30px #000; display:none;
+  }
+
+  /* pixel font fallback import */
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+</style>
 </head>
 <body>
-<h1 class="aviral">Welcome to Snake and Ladder Game</h1>
+
+<div class="game">
+  <div class="board-wrap" id="boardWrap">
+    <div class="parchment"></div>
+
+    <!-- grid of cells (z-index 2) -->
+    <div class="grid" id="grid"></div>
+
+    <!-- SVG overlay for snakes & ladders -->
+    <div class="overlay" id="overlay">
+      <svg id="svgOverlay" viewBox="0 0 1000 1000" preserveAspectRatio="none">
+        <!-- defs for filters & markers -->
+        <defs>
+          <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur"/><feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo" /></filter>
+          <marker id="snakeHead" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+            <path d="M0,0 L12,6 L0,12 L4,6 Z" fill="#082d10"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- particle canvas -->
+    <canvas class="spark" id="sparkCanvas"></canvas>
+
+    <!-- players (absolute) -->
+    <div id="player0" class="player bob" style="z-index:7;">
+      <!-- pixel wizard 1 (red) -->
+      <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid" style="image-rendering:pixelated;">
+        <rect width="32" height="32" fill="transparent"/>
+        <!-- simple pixel wizard using rects -->
+        <g>
+          <rect x="12" y="2" width="8" height="6" fill="#3a0b0b"/>
+          <rect x="10" y="8" width="12" height="2" fill="#3a0b0b"/>
+          <rect x="8" y="10" width="16" height="12" fill="#b32f2f"/>
+          <rect x="10" y="20" width="4" height="6" fill="#2b1b12"/>
+          <rect x="18" y="20" width="4" height="6" fill="#2b1b12"/>
+          <rect x="13" y="12" width="6" height="3" fill="#ffdba7"/>
+        </g>
+      </svg>
+    </div>
+
+    <div id="player1" class="player bob" style="z-index:7;">
+      <!-- pixel wizard 2 (teal) -->
+      <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid">
+        <rect width="32" height="32" fill="transparent"/>
+        <g>
+          <rect x="12" y="2" width="8" height="6" fill="#042b2b"/>
+          <rect x="10" y="8" width="12" height="2" fill="#042b2b"/>
+          <rect x="8" y="10" width="16" height="12" fill="#2bb3a3"/>
+          <rect x="10" y="20" width="4" height="6" fill="#15211a"/>
+          <rect x="18" y="20" width="4" height="6" fill="#15211a"/>
+          <rect x="13" y="12" width="6" height="3" fill="#ffdba7"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="win" id="win">🏆 <span id="winTxt">Player 1 Wins!</span> </div>
+  </div>
+
+  <div class="panel">
+    <h2>Pixel Wizard Snakes & Ladders</h2>
+    <div class="dice" id="dice" title="Click to roll">
+      <div class="face" id="diceFace">-</div>
+    </div>
+    <button class="roll-btn" id="rollBtn">ROLL DICE</button>
+    <div class="small" id="info">Turn: <strong id="turnTxt">Player 1</strong> • <span id="posTxt">P1: 1, P2: 1</span></div>
+    <div style="margin-top:12px;">
+      <small style="color:#cfd8ef">Pixel art board, slither animations, sparkle effects, and retro vibe. Built with SVG & canvas.</small>
+    </div>
+  </div>
+</div>
+
+<script>
+/*
+Pixel Wizard Snake & Ladder
+- Board coordinates map from 1..100
+- We create an SVG overlay sized 1000x1000 for ease (scale mapped to board)
+- Use paths for snakes and ladders. Each has: start cell, end cell, type.
+- When a token lands on a path, animate token along the path (for snakes, downhill).
+*/
+
+const TILE = 48; // sync with CSS var
+const SVG_SIZE = 1000; // overlay coordinate system
+const BOARD_PIX = SVG_SIZE;
+const gridEl = document.getElementById('grid');
+const svg = document.getElementById('svgOverlay');
+const overlay = document.getElementById('overlay');
+const boardWrap = document.getElementById('boardWrap');
+const sparkCanvas = document.getElementById('sparkCanvas');
+const playerEls = [document.getElementById('player0'), document.getElementById('player1')];
+const diceFace = document.getElementById('diceFace');
+const rollBtn = document.getElementById('rollBtn');
+const diceBox = document.getElementById('dice');
+const turnTxt = document.getElementById('turnTxt');
+const posTxt = document.getElementById('posTxt');
+const winDiv = document.getElementById('win');
+const winTxt = document.getElementById('winTxt');
+
+let w = boardWrap.clientWidth, h = boardWrap.clientHeight;
+sparkCanvas.width = w; sparkCanvas.height = h;
+
+// create cells (numbering 100..1 left-to-right snake pattern)
+function createGrid(){
+  // we need 100 cells with zigzag numbering: bottom row left->right is 1..10,
+  // next row 11..20 right->left and so on; but in our original the board displays high numbers top-left.
+  // we'll layout visually as typical board: bottom-left is 1.
+  gridEl.innerHTML = '';
+  const cells = [];
+  // We'll create 100 divs visually; but to map cell center coords, compute from index
+  for(let r=9; r>=0; r--){
+    let reverse = (9 - r) % 2 === 1; // rows from bottom; if odd row reverse numbering
+    for(let c=0; c<10; c++){
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      // compute number
+      const colIndex = reverse ? 9 - c : c;
+      const num = (9 - r) * 10 + colIndex + 1;
+      cell.textContent = num;
+      gridEl.appendChild(cell);
+    }
+  }
+}
+createGrid();
+
+// helper: map cellNumber -> svg coordinate (x,y) center in [0..SVG_SIZE]
+function cellToXY(num){
+  // bottom-left 1
+  num = Number(num);
+  const row = Math.floor((num-1)/10); // 0-based from bottom
+  let col = (num-1)%10;
+  if(row%2===1) col = 9 - col; // zigzag
+  // compute center
+  const tile = SVG_SIZE/10;
+  const cx = col*tile + tile/2;
+  const cy = SVG_SIZE - (row*tile + tile/2);
+  return {x: cx, y: cy};
+}
+
+// define snakes and ladders (start->end)
+const snakes = [
+  {from: 98, to: 63},
+  {from: 92, to: 76},
+  {from: 74, to: 53},
+  {from: 64, to: 46},
+  {from: 55, to: 27}
+];
+const ladders = [
+  {from: 4, to: 22},
+  {from: 9, to: 31},
+  {from: 20, to: 41},
+  {from: 28, to: 84},
+  {from: 36, to: 58}
+];
+
+// draw paths on svg
+function drawPaths(){
+  // scale to viewBox (we chose 0..1000)
+  function pathForPair(a,b, type){
+    const p1 = cellToXY(a);
+    const p2 = cellToXY(b);
+    // create a curved path with control points
+    const dx = (p2.x - p1.x), dy = (p2.y - p1.y);
+    const mx = (p1.x + p2.x)/2;
+    const my = (p1.y + p2.y)/2;
+    const perp = {x: -(dy), y: dx};
+    const norm = Math.hypot(perp.x, perp.y)||1;
+    const nx = perp.x / norm, ny = perp.y / norm;
+    // amplitude depends on distance
+    const amp = Math.min(120, Math.hypot(dx,dy)/2 + 30);
+    // bend direction: snakes curve the opposite direction sometimes
+    const sign = type==='snake' ? -1 : 1;
+    const cx1 = mx + nx * amp * sign;
+    const cy1 = my + ny * amp * sign;
+    return `M ${p1.x},${p1.y} Q ${cx1},${cy1} ${p2.x},${p2.y}`;
+  }
+
+  // clear previous
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  // re-add defs
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  defs.innerHTML = `
+    <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="blur"/><feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" result="goo" /></filter>
+    <marker id="snakeHead" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 L4,6 Z" fill="#082d10"/></marker>
+  `;
+  svg.appendChild(defs);
+
+  // ladders behind snakes
+  ladders.forEach((l, idx)=>{
+    const d = pathForPair(l.from, l.to, 'ladder');
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','ladder glow');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    path.setAttribute('class','ladder-path');
+    path.setAttribute('id','ladder'+idx);
+    g.appendChild(path);
+
+    // draw rungs along the curve
+    const rungCount = 6;
+    const total = path.getTotalLength ? path.getTotalLength() : 1;
+    for(let i=1;i<rungCount;i++){
+      const t = i/(rungCount);
+      // we'll compute rung endpoints perpendicular to tangent
+      // place small short line across
+      const pt = path.getPointAtLength ? path.getPointAtLength(total*t) : {x:0,y:0};
+      const next = path.getPointAtLength ? path.getPointAtLength(Math.min(total, total*t+1)) : {x:pt.x+1,y:pt.y};
+      const tx = next.x - pt.x, ty = next.y - pt.y;
+      const len = Math.hypot(tx,ty)||1;
+      const nx = -ty/len, ny = tx/len;
+      const rungLen = 18;
+      const x1 = pt.x - nx*rungLen/2, y1 = pt.y - ny*rungLen/2;
+      const x2 = pt.x + nx*rungLen/2, y2 = pt.y + ny*rungLen/2;
+      const rung = document.createElementNS('http://www.w3.org/2000/svg','line');
+      rung.setAttribute('x1', x1); rung.setAttribute('y1', y1);
+      rung.setAttribute('x2', x2); rung.setAttribute('y2', y2);
+      rung.setAttribute('class','ladder-rung');
+      g.appendChild(rung);
+    }
+    svg.appendChild(g);
+  });
+
+  // snakes on top
+  snakes.forEach((s, idx)=>{
+    const d = pathForPair(s.from, s.to, 'snake');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    path.setAttribute('id','snake'+idx);
+    path.setAttribute('class','snake-path');
+    path.setAttribute('marker-end','url(#snakeHead)');
+    // add wavy dotted overlay for scales
+    const body = document.createElementNS('http://www.w3.org/2000/svg','path');
+    body.setAttribute('d', d);
+    body.setAttribute('class','snake-body');
+    body.setAttribute('stroke-dasharray','6 8');
+    body.setAttribute('stroke-linecap','round');
+
+    svg.appendChild(body);
+    svg.appendChild(path);
+  });
+}
+drawPaths();
+
+// token state
+let positions = [1,1];
+let currentPlayer = 0;
+let rolling = false;
+
+// place players visually to starting cell
+function placePlayer(playerIdx, cellNum){
+  const el = playerEls[playerIdx];
+  const box = boardWrap.getBoundingClientRect();
+  const {x,y} = cellToXY(cellNum);
+  const px = (x/ SVG_SIZE) * box.width;
+  const py = (1 - (y/ SVG_SIZE)) * box.height + (SVG_SIZE - SVG_SIZE); // simpler: transform differently
+  // we compute using boardWrap offset mapping: easier map using getBoundingClientRect of overlay svg
+  const overlayRect = boardWrap.getBoundingClientRect();
+  // compute using grid tile size
+  const tileW = overlayRect.width / 10;
+  const row = Math.floor((cellNum-1)/10);
+  let col = (cellNum-1)%10; if(row%2===1) col = 9 - col;
+  const left = overlayRect.left + col*tileW + (tileW - el.clientWidth)/2;
+  // bottom origin: tile from bottom
+  const bottomRow = Math.floor((cellNum-1)/10);
+  const top = overlayRect.top + (9 - bottomRow)*tileW + (tileW - el.clientHeight)/2;
+  el.style.left = (left - overlayRect.left) + 'px';
+  el.style.top = (top - overlayRect.top) + 'px';
+}
+
+// initial placement
+function layoutPlayers(){
+  placePlayer(0, positions[0]);
+  placePlayer(1, positions[1]);
+}
+setTimeout(layoutPlayers,50);
+window.addEventListener('resize', ()=>{ sparkCanvas.width = boardWrap.clientWidth; sparkCanvas.height = boardWrap.clientHeight; layoutPlayers(); });
+
+// simple canvas sparks
+const ctx = sparkCanvas.getContext('2d');
+let particles = [];
+function spawnSpark(x,y,color,amount=20){
+  for(let i=0;i<amount;i++){
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*6,
+      vy: (Math.random()-1.5)*-6,
+      life: 40 + Math.random()*40,
+      color
+    });
+  }
+}
+function updateParticles(){
+  ctx.clearRect(0,0,sparkCanvas.width, sparkCanvas.height);
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.life--;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.25; // gravity
+    ctx.globalAlpha = Math.max(0, p.life/80);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    if(p.life<=0) particles.splice(i,1);
+  }
+  requestAnimationFrame(updateParticles);
+}
+updateParticles();
+
+// helper: move token along straight or path
+function animateTokenAlongPath(playerIdx, pathElement, finalCell, duration=900, callback){
+  const el = playerEls[playerIdx];
+  const rect = boardWrap.getBoundingClientRect();
+  const pathLen = pathElement.getTotalLength();
+  const start = performance.now();
+  // to keep token visible above, set z-index high
+  el.style.zIndex = 30;
+  function step(now){
+    const t = Math.min(1,(now - start)/duration);
+    const dist = t * pathLen;
+    const pt = pathElement.getPointAtLength(dist);
+    // map svg pt to overlay rect coords: x in [0..SVG_SIZE], y in [0..SVG_SIZE], but our svg is drawn with viewBox 0..1000 with origin top-left.
+    const svgRect = overlay.getBoundingClientRect();
+    const x = (pt.x / SVG_SIZE) * svgRect.width;
+    const y = (pt.y / SVG_SIZE) * svgRect.height;
+    el.style.left = x - el.clientWidth/2 + 'px';
+    el.style.top = y - el.clientHeight/2 + 'px';
+    if(t<1) requestAnimationFrame(step);
+    else {
+      // finalize to finalCell layout (so it snaps to grid)
+      placePlayer(playerIdx, finalCell);
+      el.style.zIndex = 7;
+      if(callback) callback();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// alternative: simple move cell to cell with tiny tween
+function tweenToCell(playerIdx, cellNum, duration=450, callback){
+  const el = playerEls[playerIdx];
+  const startRect = el.getBoundingClientRect();
+  const overlayRect = boardWrap.getBoundingClientRect();
+  const tileW = overlayRect.width/10;
+  const row = Math.floor((cellNum-1)/10);
+  let col = (cellNum-1)%10; if(row%2===1) col = 9 - col;
+  const endLeft = col*tileW + (tileW - el.clientWidth)/2;
+  const endTop = (9 - row)*tileW + (tileW - el.clientHeight)/2;
+  const sx = parseFloat(el.style.left)||startRect.left - overlayRect.left;
+  const sy = parseFloat(el.style.top)||startRect.top - overlayRect.top;
+  const start = performance.now();
+  function step(now){
+    const t = Math.min(1,(now - start)/duration);
+    const s = t<0.5 ? (2*t*t) : (-1 + (4 - 2*t)*t); // ease
+    el.style.left = (sx + (endLeft - sx)*s)+'px';
+    el.style.top = (sy + (endTop - sy)*s)+'px';
+    if(t<1) requestAnimationFrame(step);
+    else {
+      if(callback) callback();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// sounds (optional)
+const soundRoll = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
+const soundLadder = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+const soundSnake = new Audio('https://actions.google.com/sounds/v1/cartoon/slap.ogg');
+const soundWin = new Audio('https://actions.google.com/sounds/v1/cartoon/congratulations.ogg');
+
+function updateUI(){
+  turnTxt.textContent = `Player ${currentPlayer+1}`;
+  posTxt.textContent = `P1: ${positions[0]} , P2: ${positions[1]}`;
+}
+
+// roll logic with animation
+function rollDice(){
+  if(rolling) return;
+  rolling = true;
+  // dice spin animation (scale/rotate)
+  diceBox.animate([
+    { transform: 'rotate(0) scale(1)' },
+    { transform: 'rotate(1080deg) scale(1.06)' }
+  ], { duration: 900, easing:'cubic-bezier(.2,.7,.2,1)' });
+
+  // show random frames quickly then final
+  let frames = 12;
+  const interval = 60;
+  let last = 0;
+  const spin = setInterval(()=>{
+    const v = Math.floor(Math.random()*6)+1;
+    diceFace.textContent = v;
+    last = v;
+    frames--;
+    if(frames<=0){
+      clearInterval(spin);
+      const rollVal = Math.floor(Math.random()*6)+1;
+      diceFace.textContent = rollVal;
+      soundRoll.play().catch(()=>{});
+      setTimeout(()=>{ processMove(rollVal); }, 260);
+    }
+  }, interval);
+}
+
+// process move
+function processMove(rollVal){
+  const p = currentPlayer;
+  let target = positions[p] + rollVal;
+  if(target>100) target = 100 - (target - 100); // bounce back
+  // animate movement along cells: we will move step by step
+  const pathCells = [];
+  for(let i=positions[p]+1;i<=target;i++) pathCells.push(i);
+  if(pathCells.length===0){ // still switches
+    currentPlayer = 1 - currentPlayer;
+    rolling = false;
+    updateUI();
+    return;
+  }
+  // function to step
+  function stepAlong(idx){
+    if(idx>=pathCells.length){
+      // arrived; check snakes or ladders
+      // check ladders first
+      const ladder = ladders.find(l=>l.from===target);
+      const snake = snakes.find(s=>s.from===target);
+      if(ladder){
+        // animate along ladder path
+        const pathEl = document.getElementById('ladder'+ladders.indexOf(ladder));
+        // sparkle & sound
+        soundLadder.play().catch(()=>{});
+        // spawn golden sparks around current token visual coords
+        const elRect = playerEls[p].getBoundingClientRect();
+        spawnSpark(elRect.left - boardWrap.getBoundingClientRect().left + elRect.width/2, elRect.top - boardWrap.getBoundingClientRect().top + elRect.height/2, '#ffeaa7', 30);
+        animateTokenAlongPath(p, pathEl, ladder.to, 900, ()=>{
+          positions[p] = ladder.to;
+          finishMove();
+        });
+      } else if(snake){
+        const pathEl = document.getElementById('snake'+snakes.indexOf(snake));
+        soundSnake.play().catch(()=>{});
+        const elRect = playerEls[p].getBoundingClientRect();
+        spawnSpark(elRect.left - boardWrap.getBoundingClientRect().left + elRect.width/2, elRect.top - boardWrap.getBoundingClientRect().top + elRect.height/2, '#9be79b', 20);
+        animateTokenAlongPath(p, pathEl, snake.to, 900, ()=>{
+          positions[p] = snake.to;
+          finishMove();
+        });
+      } else {
+        positions[p] = target;
+        finishMove();
+      }
+      return;
+    }
+    // move to pathCells[idx]
+    tweenToCell(p, pathCells[idx], 160, ()=> stepAlong(idx+1));
+  }
+  stepAlong(0);
+
+  function finishMove(){
+    // check win
+    if(positions[p] === 100){
+      // win
+      winTxt.textContent = `Player ${p+1} Wins!`;
+      winDiv.style.display = 'flex';
+      soundWin.play().catch(()=>{});
+      rollBtn.disabled = true;
+    } else {
+      currentPlayer = 1 - currentPlayer;
+      rolling = false;
+      updateUI();
+    }
+    updateUI();
+  }
+}
+
+rollBtn.addEventListener('click', ()=>{ rollDice(); });
+
+// click dice too
+diceBox.addEventListener('click', ()=>{ rollDice(); });
+
+// initial UI
+updateUI();
+
+// make responsive overlay sizing mapping - when board wraps, re-layout players
+function refreshLayout(){
+  layoutPlayers();
+}
+window.addEventListener('load', ()=>{ setTimeout(refreshLayout,80); });
+</script>
+
 </body>
 </html>
